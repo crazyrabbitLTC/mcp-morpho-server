@@ -88,6 +88,10 @@ const MarketsItemsSchema = z.object({
 const AssetsResponseSchema = z.object({
     data: z.object({
         assets: z.object({
+            pageInfo: z.object({
+                count: z.number(),
+                countTotal: z.number(),
+            }),
             items: z.array(AssetWithPriceSchema)
         })
     })
@@ -96,6 +100,10 @@ const AssetsResponseSchema = z.object({
 const MarketPositionsResponseSchema = z.object({
     data: z.object({
         marketPositions: z.object({
+            pageInfo: z.object({
+                count: z.number(),
+                countTotal: z.number(),
+            }),
             items: z.array(MarketPositionSchema)
         })
     })
@@ -111,6 +119,20 @@ const GET_MARKETS_TOOL = 'get_markets';
 const GET_WHITELISTED_MARKETS_TOOL = 'get_whitelisted_markets';
 const GET_ASSET_PRICE_TOOL = 'get_asset_price';
 const GET_MARKET_POSITIONS_TOOL = 'get_market_positions';
+// Add PageInfo schema
+const PageInfoSchema = z.object({
+    count: z.number(),
+    countTotal: z.number(),
+});
+// Update response schemas to include pagination info
+const MarketsResponseSchema = z.object({
+    data: z.object({
+        markets: z.object({
+            pageInfo: PageInfoSchema,
+            items: z.array(MarketSchema),
+        })
+    })
+});
 // Create server instance with capabilities to handle tools
 const server = new Server({
     name: "morpho-api-server",
@@ -126,10 +148,41 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         tools: [
             {
                 name: GET_MARKETS_TOOL,
-                description: 'Retrieves all available markets from Morpho.',
+                description: 'Retrieves markets from Morpho with pagination, ordering, and filtering support.',
                 inputSchema: {
                     type: 'object',
-                    properties: {}, // No input parameters for this tool
+                    properties: {
+                        first: {
+                            type: 'number',
+                            description: 'Number of items to return (default: 100)'
+                        },
+                        skip: {
+                            type: 'number',
+                            description: 'Number of items to skip'
+                        },
+                        orderBy: {
+                            type: 'string',
+                            enum: ['Lltv', 'BorrowApy', 'SupplyApy', 'BorrowAssets', 'SupplyAssets', 'BorrowAssetsUsd', 'SupplyAssetsUsd', 'Fee', 'Utilization'],
+                            description: 'Field to order by'
+                        },
+                        orderDirection: {
+                            type: 'string',
+                            enum: ['Asc', 'Desc'],
+                            description: 'Order direction'
+                        },
+                        where: {
+                            type: 'object',
+                            properties: {
+                                whitelisted: { type: 'boolean' },
+                                collateralAssetAddress: { type: 'string' },
+                                loanAssetAddress: { type: 'string' },
+                                uniqueKey_in: {
+                                    type: 'array',
+                                    items: { type: 'string' }
+                                }
+                            }
+                        }
+                    }
                 },
             },
             {
@@ -149,6 +202,18 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         symbol: {
                             type: 'string',
                             description: 'Asset symbol (e.g. "sDAI")'
+                        },
+                        chainId: {
+                            type: 'number',
+                            description: 'Chain ID (default: 1 for Ethereum)'
+                        },
+                        first: {
+                            type: 'number',
+                            description: 'Number of items to return'
+                        },
+                        skip: {
+                            type: 'number',
+                            description: 'Number of items to skip'
                         }
                     },
                     required: ['symbol']
@@ -156,7 +221,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             {
                 name: GET_MARKET_POSITIONS_TOOL,
-                description: 'Get positions overview for specific markets.',
+                description: 'Get positions overview for specific markets with pagination and ordering.',
                 inputSchema: {
                     type: 'object',
                     properties: {
@@ -164,9 +229,23 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                             type: 'string',
                             description: 'Unique key of the market'
                         },
-                        limit: {
+                        first: {
                             type: 'number',
                             description: 'Number of positions to return (default: 30)'
+                        },
+                        skip: {
+                            type: 'number',
+                            description: 'Number of positions to skip'
+                        },
+                        orderBy: {
+                            type: 'string',
+                            enum: ['SupplyShares', 'BorrowShares', 'SupplyAssets', 'BorrowAssets'],
+                            description: 'Field to order by'
+                        },
+                        orderDirection: {
+                            type: 'string',
+                            enum: ['Asc', 'Desc'],
+                            description: 'Order direction'
                         }
                     },
                     required: ['marketUniqueKey']
@@ -175,14 +254,36 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         ],
     };
 });
+// Helper function to build GraphQL query parameters
+function buildQueryParams(params) {
+    const queryParts = [];
+    if (params.first !== undefined)
+        queryParts.push(`first: ${params.first}`);
+    if (params.skip !== undefined)
+        queryParts.push(`skip: ${params.skip}`);
+    if (params.orderBy)
+        queryParts.push(`orderBy: ${params.orderBy}`);
+    if (params.orderDirection)
+        queryParts.push(`orderDirection: ${params.orderDirection}`);
+    if (params.where && Object.keys(params.where).length > 0) {
+        const whereStr = JSON.stringify(params.where).replace(/"([^"]+)":/g, '$1:');
+        queryParts.push(`where: ${whereStr}`);
+    }
+    return queryParts.length > 0 ? `(${queryParts.join(', ')})` : '';
+}
 // Implementation to handle tool execution requests
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, params } = request.params;
     if (name === GET_MARKETS_TOOL) {
         try {
+            const queryParams = buildQueryParams(params);
             const query = `
             query {
-              markets {
+              markets${queryParams} {
+                pageInfo {
+                  count
+                  countTotal
+                }
                 items {
                   uniqueKey
                   lltv
@@ -213,12 +314,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
           `;
             const response = await axios.post(MORPHO_API_BASE, { query });
-            const validatedData = MorphoApiResponseSchema.parse(response.data);
+            const validatedData = MarketsResponseSchema.parse(response.data);
             return {
                 content: [
                     {
                         type: 'text',
-                        text: JSON.stringify(validatedData.data.markets.items, null, 2),
+                        text: JSON.stringify(validatedData.data.markets, null, 2),
                     },
                 ],
             };
@@ -287,10 +388,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
     if (name === GET_ASSET_PRICE_TOOL) {
         try {
-            const { symbol } = params;
+            const { symbol, chainId = 1, ...paginationParams } = params;
+            const queryParams = buildQueryParams({
+                ...paginationParams,
+                where: { symbol_in: [symbol], chainId }
+            });
             const query = `
-            query GetAssetsWithPrice {
-              assets(where: { symbol_in: ["${symbol}"] }) {
+            query {
+              assets${queryParams} {
+                pageInfo {
+                  count
+                  countTotal
+                }
                 items {
                   symbol
                   address
@@ -313,7 +422,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 content: [
                     {
                         type: 'text',
-                        text: JSON.stringify(validatedData.data.assets.items, null, 2),
+                        text: JSON.stringify(validatedData.data.assets, null, 2),
                     },
                 ],
             };
@@ -328,17 +437,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
     if (name === GET_MARKET_POSITIONS_TOOL) {
         try {
-            const { marketUniqueKey, limit = 30 } = params;
+            const { marketUniqueKey, ...queryParams } = params;
+            const finalParams = buildQueryParams({
+                ...queryParams,
+                where: { marketUniqueKey_in: [marketUniqueKey] }
+            });
             const query = `
             query {
-              marketPositions(
-                first: ${limit}
-                orderBy: SupplyShares
-                orderDirection: Desc
-                where: {
-                  marketUniqueKey_in: ["${marketUniqueKey}"]
+              marketPositions${finalParams} {
+                pageInfo {
+                  count
+                  countTotal
                 }
-              ) {
                 items {
                   supplyShares
                   supplyAssets
@@ -372,7 +482,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 content: [
                     {
                         type: 'text',
-                        text: JSON.stringify(validatedData.data.marketPositions.items, null, 2),
+                        text: JSON.stringify(validatedData.data.marketPositions, null, 2),
                     },
                 ],
             };
