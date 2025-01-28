@@ -1,28 +1,51 @@
 {
-  "name": "morpho-mcp-server",
+  "name": "mcp-morpho-server",
   "version": "1.0.0",
-  "description": "MCP server for querying the Morpho API",
-  "type": "module",
+  "description": "A Model Context Protocol (MCP) server for querying the Morpho API",
+  "main": "build/index.js",
   "bin": {
-    "morpho-mcp-server": "./build/index.js"
+    "mcp-morpho-server": "./build/index.js"
   },
+  "type": "module",
   "scripts": {
     "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
-    "start": "node build/index.js"
+    "start": "node build/index.js",
+    "prepare": "npm run build"
   },
-  "files": [
-    "build"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crazyrabbitLTC/mcp-morpho-server.git"
+  },
+  "keywords": [
+    "morpho",
+    "mcp",
+    "claude",
+    "anthropic",
+    "defi",
+    "ethereum",
+    "graphql"
   ],
-  "keywords": [],
-  "author": "",
+  "author": "[Your Name] <your@email>",
   "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/crazyrabbitLTC/mcp-morpho-server/issues"
+  },
+  "homepage": "https://github.com/crazyrabbitLTC/mcp-morpho-server#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "latest",
-    "axios": "latest",
-    "zod": "latest"
+    "@modelcontextprotocol/sdk": "^0.0.1",
+    "axios": "^1.6.7",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "typescript": "latest"
-  }
+    "@types/node": "^20.11.19",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ]
 } 
