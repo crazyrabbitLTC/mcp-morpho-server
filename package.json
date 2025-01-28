@@ -1,0 +1,28 @@
+{
+  "name": "morpho-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for querying the Morpho API",
+  "type": "module",
+  "bin": {
+    "morpho-mcp-server": "./build/index.js"
+  },
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', '755')\"",
+    "start": "node build/index.js"
+  },
+  "files": [
+    "build"
+  ],
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "axios": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "latest"
+  }
+} 
