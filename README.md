@@ -1,5 +1,7 @@
 # Morpho API MCP Server
 
+[![smithery badge](https://smithery.ai/badge/@crazyrabbitLTC/mcp-morpho-server)](https://smithery.ai/server/@crazyrabbitLTC/mcp-morpho-server)
+
 A Model Context Protocol (MCP) server that provides tools for querying the Morpho API. This server enables Claude to interact with Morpho's GraphQL API, providing access to market data, vaults, positions, and more.
 
 ## Features
@@ -14,6 +16,15 @@ A Model Context Protocol (MCP) server that provides tools for querying the Morph
 
 ## Installation
 
+### Installing via Smithery
+
+To install Morpho API MCP Server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@crazyrabbitLTC/mcp-morpho-server):
+
+```bash
+npx -y @smithery/cli install @crazyrabbitLTC/mcp-morpho-server --client claude
+```
+
+### Manual Installation
 1. Install the package:
 ```bash
 npm install mcp-morpho-server
@@ -30,6 +41,7 @@ npm install mcp-morpho-server
       ]
     }
   }
+}
 }
 ```
 
