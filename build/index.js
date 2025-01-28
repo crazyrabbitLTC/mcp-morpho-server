@@ -427,7 +427,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     };
 });
 // Helper function to build GraphQL query parameters
-function buildQueryParams(params) {
+function buildQueryParams(params = {}) {
     const queryParts = [];
     if (params.first !== undefined)
         queryParts.push(`first: ${params.first}`);
@@ -445,7 +445,7 @@ function buildQueryParams(params) {
 }
 // Implementation to handle tool execution requests
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, params } = request.params;
+    const { name, params = {} } = request.params;
     if (name === GET_MARKETS_TOOL) {
         try {
             const queryParams = buildQueryParams(params);

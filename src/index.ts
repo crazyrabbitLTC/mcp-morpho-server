@@ -539,7 +539,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 // Helper function to build GraphQL query parameters
-function buildQueryParams(params: PaginationParams & { orderBy?: string, orderDirection?: OrderDirection, where?: Record<string, any> }): string {
+function buildQueryParams(params: PaginationParams & { orderBy?: string, orderDirection?: OrderDirection, where?: Record<string, any> } = {}): string {
   const queryParts: string[] = [];
   
   if (params.first !== undefined) queryParts.push(`first: ${params.first}`);
@@ -556,7 +556,7 @@ function buildQueryParams(params: PaginationParams & { orderBy?: string, orderDi
 
 // Implementation to handle tool execution requests
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, params } = request.params;
+    const { name, params = {} } = request.params;
 
   if (name === GET_MARKETS_TOOL) {
       try {
