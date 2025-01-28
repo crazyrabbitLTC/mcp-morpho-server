@@ -133,6 +133,111 @@ const MarketsResponseSchema = z.object({
         })
     })
 });
+// TimeseriesPoint Schema
+const TimeseriesPointSchema = z.object({
+    x: z.number(),
+    y: z.number().nullable(),
+});
+// Oracle Feed Schema
+const OracleFeedSchema = z.object({
+    address: z.string(),
+    description: z.string(),
+    vendor: z.string(),
+    pair: z.string(),
+});
+// Oracle Data Schema
+const OracleDataSchema = z.discriminatedUnion('type', [
+    z.object({
+        type: z.literal('MorphoChainlinkOracle'),
+        baseFeedOne: OracleFeedSchema,
+        vault: z.string(),
+    }),
+    z.object({
+        type: z.literal('MorphoChainlinkOracleV2'),
+        baseFeedOne: OracleFeedSchema,
+    }),
+]);
+// Oracle Schema
+const OracleSchema = z.object({
+    address: z.string(),
+    type: z.string(),
+    data: OracleDataSchema,
+});
+// Transaction Schema
+const TransactionSchema = z.object({
+    blockNumber: z.number(),
+    hash: z.string(),
+    type: z.string(),
+    timestamp: z.number(),
+    user: z.object({
+        address: z.string(),
+    }),
+    data: z.object({
+        seizedAssets: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+        repaidAssets: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+        seizedAssetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+        repaidAssetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+        badDebtAssetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+        liquidator: z.string().optional(),
+        market: z.object({
+            uniqueKey: z.string(),
+        }).optional(),
+    }).optional(),
+});
+// Vault Position Schema
+const VaultPositionSchema = z.object({
+    vault: z.object({
+        address: z.string(),
+        name: z.string(),
+    }),
+    assets: z.union([z.string(), z.number()]).transform(stringToNumber),
+    assetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber),
+    shares: z.union([z.string(), z.number()]).transform(stringToNumber),
+});
+// Account Overview Schema
+const AccountOverviewSchema = z.object({
+    address: z.string(),
+    marketPositions: z.array(MarketPositionSchema),
+    vaultPositions: z.array(VaultPositionSchema),
+    transactions: z.array(TransactionSchema),
+});
+// Response Schemas
+const HistoricalApyResponseSchema = z.object({
+    data: z.object({
+        marketByUniqueKey: z.object({
+            uniqueKey: z.string(),
+            historicalState: z.object({
+                supplyApy: z.array(TimeseriesPointSchema),
+                borrowApy: z.array(TimeseriesPointSchema),
+            }),
+        }),
+    }),
+});
+const OracleDetailsResponseSchema = z.object({
+    data: z.object({
+        marketByUniqueKey: z.object({
+            oracle: OracleSchema,
+        }),
+    }),
+});
+const AccountOverviewResponseSchema = z.object({
+    data: z.object({
+        userByAddress: AccountOverviewSchema,
+    }),
+});
+const LiquidationsResponseSchema = z.object({
+    data: z.object({
+        transactions: z.object({
+            pageInfo: PageInfoSchema,
+            items: z.array(TransactionSchema),
+        }),
+    }),
+});
+// Additional tool constants
+const GET_HISTORICAL_APY_TOOL = 'get_historical_apy';
+const GET_ORACLE_DETAILS_TOOL = 'get_oracle_details';
+const GET_ACCOUNT_OVERVIEW_TOOL = 'get_account_overview';
+const GET_LIQUIDATIONS_TOOL = 'get_liquidations';
 // Create server instance with capabilities to handle tools
 const server = new Server({
     name: "morpho-api-server",
@@ -249,6 +354,73 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         }
                     },
                     required: ['marketUniqueKey']
+                },
+            },
+            {
+                name: GET_HISTORICAL_APY_TOOL,
+                description: 'Get historical APY data for a specific market.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        marketUniqueKey: { type: 'string' },
+                        chainId: { type: 'number' },
+                        startTimestamp: { type: 'number' },
+                        endTimestamp: { type: 'number' },
+                        interval: {
+                            type: 'string',
+                            enum: ['HOUR', 'DAY', 'WEEK', 'MONTH']
+                        }
+                    },
+                    required: ['marketUniqueKey', 'startTimestamp', 'endTimestamp', 'interval']
+                },
+            },
+            {
+                name: GET_ORACLE_DETAILS_TOOL,
+                description: 'Get oracle details for a specific market.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        marketUniqueKey: { type: 'string' },
+                        chainId: { type: 'number' }
+                    },
+                    required: ['marketUniqueKey']
+                },
+            },
+            {
+                name: GET_ACCOUNT_OVERVIEW_TOOL,
+                description: 'Get account overview including positions and transactions.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        address: { type: 'string' },
+                        chainId: { type: 'number' }
+                    },
+                    required: ['address']
+                },
+            },
+            {
+                name: GET_LIQUIDATIONS_TOOL,
+                description: 'Get liquidation events with filtering and pagination.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        marketUniqueKeys: {
+                            type: 'array',
+                            items: { type: 'string' }
+                        },
+                        startTimestamp: { type: 'number' },
+                        endTimestamp: { type: 'number' },
+                        first: { type: 'number' },
+                        skip: { type: 'number' },
+                        orderBy: {
+                            type: 'string',
+                            enum: ['Timestamp', 'SeizedAssetsUsd', 'RepaidAssetsUsd']
+                        },
+                        orderDirection: {
+                            type: 'string',
+                            enum: ['Asc', 'Desc']
+                        }
+                    }
                 },
             },
         ],
@@ -492,6 +664,210 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             return {
                 isError: true,
                 content: [{ type: 'text', text: `Error retrieving market positions: ${error.message}` }],
+            };
+        }
+    }
+    if (name === GET_HISTORICAL_APY_TOOL) {
+        try {
+            const { marketUniqueKey, chainId = 1, startTimestamp, endTimestamp, interval } = params;
+            const query = `
+            query MarketApys {
+              marketByUniqueKey(
+                uniqueKey: "${marketUniqueKey}"
+                chainId: ${chainId}
+              ) {
+                uniqueKey
+                historicalState {
+                  supplyApy(options: {
+                    startTimestamp: ${startTimestamp}
+                    endTimestamp: ${endTimestamp}
+                    interval: ${interval}
+                  }) {
+                    x
+                    y
+                  }
+                  borrowApy(options: {
+                    startTimestamp: ${startTimestamp}
+                    endTimestamp: ${endTimestamp}
+                    interval: ${interval}
+                  }) {
+                    x
+                    y
+                  }
+                }
+              }
+            }`;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = HistoricalApyResponseSchema.parse(response.data);
+            return {
+                content: [{ type: 'text', text: JSON.stringify(validatedData.data.marketByUniqueKey, null, 2) }],
+            };
+        }
+        catch (error) {
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving historical APY: ${error.message}` }],
+            };
+        }
+    }
+    if (name === GET_ORACLE_DETAILS_TOOL) {
+        try {
+            const { marketUniqueKey, chainId = 1 } = params;
+            const query = `
+            query {
+              marketByUniqueKey(
+                uniqueKey: "${marketUniqueKey}"
+                chainId: ${chainId}
+              ) {
+                oracle {
+                  address
+                  type
+                  data {
+                    ... on MorphoChainlinkOracleData {
+                      baseFeedOne {
+                        address
+                        description
+                        vendor
+                        pair
+                      }
+                      vault
+                    }
+                    ... on MorphoChainlinkOracleV2Data {
+                      baseFeedOne {
+                        address
+                        description
+                        vendor
+                        pair
+                      }
+                    }
+                  }
+                }
+              }
+            }`;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = OracleDetailsResponseSchema.parse(response.data);
+            return {
+                content: [{ type: 'text', text: JSON.stringify(validatedData.data.marketByUniqueKey, null, 2) }],
+            };
+        }
+        catch (error) {
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving oracle details: ${error.message}` }],
+            };
+        }
+    }
+    if (name === GET_ACCOUNT_OVERVIEW_TOOL) {
+        try {
+            const { address, chainId = 1 } = params;
+            const query = `
+            query {
+              userByAddress(
+                chainId: ${chainId}
+                address: "${address}"
+              ) {
+                address
+                marketPositions {
+                  market {
+                    uniqueKey
+                  }
+                  borrowAssets
+                  borrowAssetsUsd
+                  supplyAssets
+                  supplyAssetsUsd
+                }
+                vaultPositions {
+                  vault {
+                    address
+                    name
+                  }
+                  assets
+                  assetsUsd
+                  shares
+                }
+                transactions {
+                  hash
+                  timestamp
+                  type
+                }
+              }
+            }`;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = AccountOverviewResponseSchema.parse(response.data);
+            return {
+                content: [{ type: 'text', text: JSON.stringify(validatedData.data.userByAddress, null, 2) }],
+            };
+        }
+        catch (error) {
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving account overview: ${error.message}` }],
+            };
+        }
+    }
+    if (name === GET_LIQUIDATIONS_TOOL) {
+        try {
+            const liquidationParams = params;
+            const where = {
+                type_in: ['MarketLiquidation']
+            };
+            if (liquidationParams.marketUniqueKeys?.length) {
+                where.marketUniqueKey_in = liquidationParams.marketUniqueKeys;
+            }
+            if (liquidationParams.startTimestamp) {
+                where.timestamp_gte = liquidationParams.startTimestamp;
+            }
+            if (liquidationParams.endTimestamp) {
+                where.timestamp_lte = liquidationParams.endTimestamp;
+            }
+            const queryParams = buildQueryParams({
+                first: liquidationParams.first,
+                skip: liquidationParams.skip,
+                orderBy: liquidationParams.orderBy,
+                orderDirection: liquidationParams.orderDirection,
+                where
+            });
+            const query = `
+            query {
+              transactions${queryParams} {
+                pageInfo {
+                  count
+                  countTotal
+                }
+                items {
+                  blockNumber
+                  hash
+                  type
+                  timestamp
+                  user {
+                    address
+                  }
+                  data {
+                    ... on MarketLiquidationTransactionData {
+                      seizedAssets
+                      repaidAssets
+                      seizedAssetsUsd
+                      repaidAssetsUsd
+                      badDebtAssetsUsd
+                      liquidator
+                      market {
+                        uniqueKey
+                      }
+                    }
+                  }
+                }
+              }
+            }`;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = LiquidationsResponseSchema.parse(response.data);
+            return {
+                content: [{ type: 'text', text: JSON.stringify(validatedData.data.transactions, null, 2) }],
+            };
+        }
+        catch (error) {
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving liquidations: ${error.message}` }],
             };
         }
     }
