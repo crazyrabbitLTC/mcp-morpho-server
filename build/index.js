@@ -238,6 +238,32 @@ const GET_HISTORICAL_APY_TOOL = 'get_historical_apy';
 const GET_ORACLE_DETAILS_TOOL = 'get_oracle_details';
 const GET_ACCOUNT_OVERVIEW_TOOL = 'get_account_overview';
 const GET_LIQUIDATIONS_TOOL = 'get_liquidations';
+// Vault Schema
+const VaultSchema = z.object({
+    address: z.string(),
+    name: z.string(),
+    symbol: z.string(),
+    decimals: z.number(),
+    asset: AssetSchema,
+    state: z.object({
+        totalAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
+        totalAssetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber),
+        totalShares: z.union([z.string(), z.number()]).transform(stringToNumber),
+        sharePrice: z.union([z.string(), z.number()]).transform(stringToNumber),
+        apy: z.number().nullable(),
+    }),
+});
+// Vaults Response Schema
+const VaultsResponseSchema = z.object({
+    data: z.object({
+        vaults: z.object({
+            pageInfo: PageInfoSchema,
+            items: z.array(VaultSchema),
+        }),
+    }),
+});
+// Add new tool constant
+const GET_VAULTS_TOOL = 'get_vaults';
 // Create server instance with capabilities to handle tools
 const server = new Server({
     name: "morpho-api-server",
@@ -419,6 +445,48 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         orderDirection: {
                             type: 'string',
                             enum: ['Asc', 'Desc']
+                        }
+                    }
+                },
+            },
+            {
+                name: GET_VAULTS_TOOL,
+                description: 'Retrieves vaults from Morpho with pagination, ordering, and filtering support.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        first: {
+                            type: 'number',
+                            description: 'Number of items to return (default: 100)'
+                        },
+                        skip: {
+                            type: 'number',
+                            description: 'Number of items to skip'
+                        },
+                        orderBy: {
+                            type: 'string',
+                            enum: ['TotalAssetsUsd', 'Apy', 'SharePrice'],
+                            description: 'Field to order by'
+                        },
+                        orderDirection: {
+                            type: 'string',
+                            enum: ['Asc', 'Desc'],
+                            description: 'Order direction'
+                        },
+                        where: {
+                            type: 'object',
+                            properties: {
+                                asset_in: {
+                                    type: 'array',
+                                    items: { type: 'string' },
+                                    description: 'Filter by asset addresses'
+                                },
+                                address_in: {
+                                    type: 'array',
+                                    items: { type: 'string' },
+                                    description: 'Filter by vault addresses'
+                                }
+                            }
                         }
                     }
                 },
@@ -868,6 +936,56 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             return {
                 isError: true,
                 content: [{ type: 'text', text: `Error retrieving liquidations: ${error.message}` }],
+            };
+        }
+    }
+    if (name === GET_VAULTS_TOOL) {
+        try {
+            const queryParams = buildQueryParams(params);
+            const query = `
+            query {
+              vaults${queryParams} {
+                pageInfo {
+                  count
+                  countTotal
+                }
+                items {
+                  address
+                  name
+                  symbol
+                  decimals
+                  asset {
+                    address
+                    symbol
+                    decimals
+                  }
+                  state {
+                    totalAssets
+                    totalAssetsUsd
+                    totalShares
+                    sharePrice
+                    apy
+                  }
+                }
+              }
+            }
+          `;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = VaultsResponseSchema.parse(response.data);
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify(validatedData.data.vaults, null, 2),
+                    },
+                ],
+            };
+        }
+        catch (error) {
+            console.error('Error calling Morpho API:', error.message);
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving vaults: ${error.message}` }],
             };
         }
     }
