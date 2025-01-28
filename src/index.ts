@@ -10,33 +10,42 @@ import axios from 'axios';
 import { z } from 'zod';
 
 // Define the base URL for the Morpho API
-const MORPHO_API_BASE = 'https://api.morpho.xyz/graphql';
+const MORPHO_API_BASE = 'https://blue-api.morpho.org/graphql';
+
+// Helper function to transform string numbers to numbers
+const stringToNumber = (val: string | number | null): number => {
+  if (val === null) return 0;
+  return typeof val === 'string' ? Number(val) : val;
+};
 
 // Define Zod schemas for data validation
+
+// Asset Schema
+const AssetSchema = z.object({
+  address: z.string(),
+  symbol: z.string(),
+  decimals: z.number(),
+}).nullable().transform(val => val || {
+  address: '',
+  symbol: '',
+  decimals: 0
+});
 
 // Market Schema
 const MarketSchema = z.object({
   uniqueKey: z.string(),
-  lltv: z.number(),
+  lltv: z.union([z.string(), z.number()]).transform(stringToNumber),
   oracleAddress: z.string(),
   irmAddress: z.string(),
-  loanAsset: z.object({
-    address: z.string(),
-    symbol: z.string(),
-    decimals: z.number(),
-  }),
-  collateralAsset: z.object({
-    address: z.string(),
-    symbol: z.string(),
-    decimals: z.number(),
-  }),
+  loanAsset: AssetSchema,
+  collateralAsset: AssetSchema,
   state: z.object({
     borrowApy: z.number(),
-    borrowAssets: z.number(),
-    borrowAssetsUsd: z.number(),
+    borrowAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
+    borrowAssetsUsd: z.number().nullable().transform(val => val ?? 0),
     supplyApy: z.number(),
-    supplyAssets: z.number(),
-    supplyAssetsUsd: z.number(),
+    supplyAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
+    supplyAssetsUsd: z.number().nullable().transform(val => val ?? 0),
     fee: z.number(),
     utilization: z.number(),
   }),
