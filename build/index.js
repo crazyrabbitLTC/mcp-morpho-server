@@ -238,32 +238,178 @@ const GET_HISTORICAL_APY_TOOL = 'get_historical_apy';
 const GET_ORACLE_DETAILS_TOOL = 'get_oracle_details';
 const GET_ACCOUNT_OVERVIEW_TOOL = 'get_account_overview';
 const GET_LIQUIDATIONS_TOOL = 'get_liquidations';
-// Vault Schema
+// Warning Schema
+const WarningSchema = z.object({
+    type: z.enum(['unrecognized_deposit_asset', 'unrecognized_vault_curator', 'not_whitelisted']),
+    level: z.enum(['YELLOW', 'RED'])
+});
+// Flow Cap Schema
+const FlowCapSchema = z.object({
+    market: z.object({
+        uniqueKey: z.string()
+    }),
+    maxIn: z.union([z.string(), z.number()]).transform(stringToNumber),
+    maxOut: z.union([z.string(), z.number()]).transform(stringToNumber)
+});
+// Public Allocator Config Schema
+const PublicAllocatorConfigSchema = z.object({
+    fee: z.number(),
+    flowCaps: z.array(FlowCapSchema)
+});
+// Pending Cap Schema
+const PendingCapSchema = z.object({
+    validAt: z.number(),
+    supplyCap: z.union([z.string(), z.number()]).transform(stringToNumber),
+    market: z.object({
+        uniqueKey: z.string()
+    })
+});
+// Update VaultSchema
 const VaultSchema = z.object({
     address: z.string(),
-    name: z.string(),
     symbol: z.string(),
-    decimals: z.number(),
-    asset: AssetSchema,
+    name: z.string(),
+    creationBlockNumber: z.number(),
+    creationTimestamp: z.number(),
+    creatorAddress: z.string(),
+    whitelisted: z.boolean(),
+    asset: z.object({
+        id: z.string(),
+        address: z.string(),
+        decimals: z.number()
+    }),
+    chain: z.object({
+        id: z.number(),
+        network: z.string()
+    }),
     state: z.object({
+        id: z.string(),
+        apy: z.number().nullable(),
+        netApy: z.number().nullable(),
         totalAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
         totalAssetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber),
-        totalShares: z.union([z.string(), z.number()]).transform(stringToNumber),
-        sharePrice: z.union([z.string(), z.number()]).transform(stringToNumber),
-        apy: z.number().nullable(),
+        fee: z.number(),
+        timelock: z.number()
     }),
+    warnings: z.array(WarningSchema).optional(),
+    pendingCaps: z.array(PendingCapSchema).optional(),
+    allocators: z.array(z.object({
+        address: z.string()
+    })).optional(),
+    publicAllocatorConfig: PublicAllocatorConfigSchema.optional()
 });
-// Vaults Response Schema
+// Vault Allocation Schema
+const VaultAllocationSchema = z.object({
+    market: MarketSchema,
+    supplyCap: z.union([z.string(), z.number()]).transform(stringToNumber),
+    supplyAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
+    supplyAssetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber)
+});
+// Vault Reallocate Schema
+const VaultReallocateSchema = z.object({
+    id: z.string(),
+    timestamp: z.number(),
+    hash: z.string(),
+    blockNumber: z.number(),
+    caller: z.string(),
+    shares: z.union([z.string(), z.number()]).transform(stringToNumber),
+    assets: z.union([z.string(), z.number()]).transform(stringToNumber),
+    type: z.string(),
+    vault: z.object({
+        id: z.string(),
+        chain: z.object({
+            id: z.number()
+        })
+    }),
+    market: MarketSchema
+});
+// Update VaultsResponseSchema
 const VaultsResponseSchema = z.object({
     data: z.object({
         vaults: z.object({
             pageInfo: PageInfoSchema,
-            items: z.array(VaultSchema),
-        }),
-    }),
+            items: z.array(VaultSchema)
+        })
+    })
 });
-// Add new tool constant
+// Add new response schemas
+const VaultAllocationResponseSchema = z.object({
+    data: z.object({
+        vaultByAddress: z.object({
+            address: z.string(),
+            state: z.object({
+                allocation: z.array(VaultAllocationSchema)
+            })
+        })
+    })
+});
+const VaultReallocatesResponseSchema = z.object({
+    data: z.object({
+        vaultReallocates: z.object({
+            items: z.array(VaultReallocateSchema),
+            pageInfo: PageInfoSchema
+        })
+    })
+});
+// Add new tool constants
+const GET_VAULT_ALLOCATION_TOOL = 'get_vault_allocation';
+const GET_VAULT_REALLOCATES_TOOL = 'get_vault_reallocates';
+// Add new tool constants
 const GET_VAULTS_TOOL = 'get_vaults';
+const GET_VAULT_POSITIONS_TOOL = 'get_vault_positions';
+const GET_VAULT_TRANSACTIONS_TOOL = 'get_vault_transactions';
+const GET_VAULT_APY_HISTORY_TOOL = 'get_vault_apy_history';
+// Add new response schemas
+const VaultPositionsResponseSchema = z.object({
+    data: z.object({
+        vaultPositions: z.object({
+            items: z.array(z.object({
+                shares: z.union([z.string(), z.number()]).transform(stringToNumber),
+                assets: z.union([z.string(), z.number()]).transform(stringToNumber),
+                assetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber),
+                user: z.object({
+                    address: z.string()
+                })
+            }))
+        })
+    })
+});
+const VaultTransactionsResponseSchema = z.object({
+    data: z.object({
+        transactions: z.object({
+            items: z.array(z.object({
+                hash: z.string(),
+                timestamp: z.number(),
+                type: z.string(),
+                chain: z.object({
+                    id: z.number(),
+                    network: z.string()
+                }),
+                user: z.object({
+                    address: z.string()
+                }),
+                data: z.object({
+                    shares: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+                    assets: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+                    vault: z.object({
+                        address: z.string()
+                    }).optional()
+                }).optional()
+            }))
+        })
+    })
+});
+const VaultApyHistoryResponseSchema = z.object({
+    data: z.object({
+        vaultByAddress: z.object({
+            address: z.string(),
+            historicalState: z.object({
+                apy: z.array(TimeseriesPointSchema),
+                netApy: z.array(TimeseriesPointSchema)
+            })
+        })
+    })
+});
 // Create server instance with capabilities to handle tools
 const server = new Server({
     name: "morpho-api-server",
@@ -450,47 +596,127 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 },
             },
             {
-                name: GET_VAULTS_TOOL,
-                description: 'Retrieves vaults from Morpho with pagination, ordering, and filtering support.',
+                name: GET_VAULT_ALLOCATION_TOOL,
+                description: 'Get vault allocation for a specific market.',
                 inputSchema: {
                     type: 'object',
                     properties: {
-                        first: {
-                            type: 'number',
-                            description: 'Number of items to return (default: 100)'
-                        },
-                        skip: {
-                            type: 'number',
-                            description: 'Number of items to skip'
-                        },
+                        address: { type: 'string' },
+                        chainId: { type: 'number' }
+                    },
+                    required: ['address']
+                },
+            },
+            {
+                name: GET_VAULT_REALLOCATES_TOOL,
+                description: 'Get vault reallocates for a specific vault.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        vaultAddress: { type: 'string' },
+                        first: { type: 'number' },
+                        skip: { type: 'number' },
                         orderBy: {
                             type: 'string',
-                            enum: ['TotalAssetsUsd', 'Apy', 'SharePrice'],
-                            description: 'Field to order by'
+                            enum: ['Timestamp']
                         },
                         orderDirection: {
                             type: 'string',
-                            enum: ['Asc', 'Desc'],
-                            description: 'Order direction'
+                            enum: ['Asc', 'Desc']
+                        }
+                    },
+                    required: ['vaultAddress']
+                },
+            },
+            {
+                name: GET_VAULTS_TOOL,
+                description: 'Retrieves all vaults with their current states.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        first: { type: 'number' },
+                        skip: { type: 'number' },
+                        orderBy: {
+                            type: 'string',
+                            enum: ['TotalAssetsUsd', 'Apy', 'NetApy']
                         },
-                        where: {
-                            type: 'object',
-                            properties: {
-                                asset_in: {
-                                    type: 'array',
-                                    items: { type: 'string' },
-                                    description: 'Filter by asset addresses'
-                                },
-                                address_in: {
-                                    type: 'array',
-                                    items: { type: 'string' },
-                                    description: 'Filter by vault addresses'
-                                }
+                        orderDirection: {
+                            type: 'string',
+                            enum: ['Asc', 'Desc']
+                        }
+                    }
+                }
+            },
+            {
+                name: GET_VAULT_POSITIONS_TOOL,
+                description: 'Get positions for a specific vault.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        vaultAddress: { type: 'string' },
+                        first: { type: 'number' },
+                        skip: { type: 'number' },
+                        orderBy: {
+                            type: 'string',
+                            enum: ['Shares', 'Assets', 'AssetsUsd']
+                        },
+                        orderDirection: {
+                            type: 'string',
+                            enum: ['Asc', 'Desc']
+                        }
+                    },
+                    required: ['vaultAddress']
+                }
+            },
+            {
+                name: GET_VAULT_TRANSACTIONS_TOOL,
+                description: 'Get latest vault transactions.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        first: { type: 'number' },
+                        skip: { type: 'number' },
+                        orderBy: {
+                            type: 'string',
+                            enum: ['Timestamp']
+                        },
+                        orderDirection: {
+                            type: 'string',
+                            enum: ['Asc', 'Desc']
+                        },
+                        type_in: {
+                            type: 'array',
+                            items: {
+                                type: 'string',
+                                enum: ['MetaMorphoFee', 'MetaMorphoWithdraw', 'MetaMorphoDeposit']
                             }
                         }
                     }
-                },
+                }
             },
+            {
+                name: GET_VAULT_APY_HISTORY_TOOL,
+                description: 'Get historical APY data for a vault.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        address: { type: 'string' },
+                        options: {
+                            type: 'object',
+                            properties: {
+                                startTimestamp: { type: 'number' },
+                                endTimestamp: { type: 'number' },
+                                interval: {
+                                    type: 'string',
+                                    enum: ['HOUR', 'DAY', 'WEEK', 'MONTH']
+                                }
+                            },
+                            required: ['startTimestamp', 'endTimestamp', 'interval']
+                        }
+                    },
+                    required: ['address', 'options']
+                }
+            }
         ],
     };
 });
@@ -939,53 +1165,260 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             };
         }
     }
-    if (name === GET_VAULTS_TOOL) {
+    if (name === GET_VAULT_ALLOCATION_TOOL) {
         try {
-            const queryParams = buildQueryParams(params);
+            const { address, chainId = 1 } = params;
             const query = `
             query {
-              vaults${queryParams} {
+              vaultByAddress(
+                chainId: ${chainId}
+                address: "${address}"
+              ) {
+                address
+                state {
+                  allocation {
+                    market {
+                      uniqueKey
+                    }
+                    supplyCap
+                    supplyAssets
+                    supplyAssetsUsd
+                  }
+                }
+              }
+            }`;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = VaultAllocationResponseSchema.parse(response.data);
+            return {
+                content: [{ type: 'text', text: JSON.stringify(validatedData.data.vaultByAddress, null, 2) }],
+            };
+        }
+        catch (error) {
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving vault allocation: ${error.message}` }],
+            };
+        }
+    }
+    if (name === GET_VAULT_REALLOCATES_TOOL) {
+        try {
+            const { vaultAddress, first, skip, orderBy = 'Timestamp', orderDirection = 'Asc' } = params;
+            const queryParams = buildQueryParams({
+                first,
+                skip,
+                orderBy,
+                orderDirection,
+                where: { vaultAddress_in: [vaultAddress] }
+            });
+            const query = `
+            query {
+              vaultReallocates${queryParams} {
                 pageInfo {
                   count
                   countTotal
                 }
                 items {
-                  address
-                  name
-                  symbol
-                  decimals
-                  asset {
-                    address
-                    symbol
-                    decimals
+                  id
+                  timestamp
+                  hash
+                  blockNumber
+                  caller
+                  shares
+                  assets
+                  type
+                  vault {
+                    id
+                    chain {
+                      id
+                    }
                   }
-                  state {
-                    totalAssets
-                    totalAssetsUsd
-                    totalShares
-                    sharePrice
-                    apy
+                  market {
+                    uniqueKey
+                  }
+                }
+              }
+            }`;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = VaultReallocatesResponseSchema.parse(response.data);
+            return {
+                content: [{ type: 'text', text: JSON.stringify(validatedData.data.vaultReallocates, null, 2) }],
+            };
+        }
+        catch (error) {
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving vault reallocates: ${error.message}` }],
+            };
+        }
+    }
+    if (name === GET_VAULTS_TOOL) {
+        try {
+            const queryParams = buildQueryParams(params);
+            const query = `
+        query {
+          vaults${queryParams} {
+            items {
+              address
+              symbol
+              name
+              creationBlockNumber
+              creationTimestamp
+              creatorAddress
+              whitelisted
+              asset {
+                id
+                address
+                decimals
+              }
+              chain {
+                id
+                network
+              }
+              state {
+                id
+                apy
+                netApy
+                totalAssets
+                totalAssetsUsd
+                fee
+                timelock
+              }
+              warnings {
+                type
+                level
+              }
+            }
+          }
+        }`;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = VaultsResponseSchema.parse(response.data);
+            return {
+                content: [{ type: 'text', text: JSON.stringify(validatedData.data.vaults, null, 2) }]
+            };
+        }
+        catch (error) {
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving vaults: ${error.message}` }]
+            };
+        }
+    }
+    if (name === GET_VAULT_POSITIONS_TOOL) {
+        try {
+            const { vaultAddress, ...rest } = params;
+            const queryParams = buildQueryParams({
+                ...rest,
+                where: { vaultAddress_in: [vaultAddress] }
+            });
+            const query = `
+        query {
+          vaultPositions${queryParams} {
+            items {
+              shares
+              assets
+              assetsUsd
+              user {
+                address
+              }
+            }
+          }
+        }`;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = VaultPositionsResponseSchema.parse(response.data);
+            return {
+                content: [{ type: 'text', text: JSON.stringify(validatedData.data.vaultPositions, null, 2) }]
+            };
+        }
+        catch (error) {
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving vault positions: ${error.message}` }]
+            };
+        }
+    }
+    if (name === GET_VAULT_TRANSACTIONS_TOOL) {
+        try {
+            const { type_in, ...rest } = params;
+            const queryParams = buildQueryParams({
+                ...rest,
+                where: { type_in }
+            });
+            const query = `
+        query {
+          transactions${queryParams} {
+            items {
+              hash
+              timestamp
+              type
+              chain {
+                id
+                network
+              }
+              user {
+                address
+              }
+              data {
+                ... on VaultTransactionData {
+                  shares
+                  assets
+                  vault {
+                    address
                   }
                 }
               }
             }
-          `;
+          }
+        }`;
             const response = await axios.post(MORPHO_API_BASE, { query });
-            const validatedData = VaultsResponseSchema.parse(response.data);
+            const validatedData = VaultTransactionsResponseSchema.parse(response.data);
             return {
-                content: [
-                    {
-                        type: 'text',
-                        text: JSON.stringify(validatedData.data.vaults, null, 2),
-                    },
-                ],
+                content: [{ type: 'text', text: JSON.stringify(validatedData.data.transactions, null, 2) }]
             };
         }
         catch (error) {
-            console.error('Error calling Morpho API:', error.message);
             return {
                 isError: true,
-                content: [{ type: 'text', text: `Error retrieving vaults: ${error.message}` }],
+                content: [{ type: 'text', text: `Error retrieving vault transactions: ${error.message}` }]
+            };
+        }
+    }
+    if (name === GET_VAULT_APY_HISTORY_TOOL) {
+        try {
+            const { address, options } = params;
+            const query = `
+        query {
+          vaultByAddress(address: "${address}") {
+            address
+            historicalState {
+              apy(options: {
+                startTimestamp: ${options.startTimestamp}
+                endTimestamp: ${options.endTimestamp}
+                interval: ${options.interval}
+              }) {
+                x
+                y
+              }
+              netApy(options: {
+                startTimestamp: ${options.startTimestamp}
+                endTimestamp: ${options.endTimestamp}
+                interval: ${options.interval}
+              }) {
+                x
+                y
+              }
+            }
+          }
+        }`;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = VaultApyHistoryResponseSchema.parse(response.data);
+            return {
+                content: [{ type: 'text', text: JSON.stringify(validatedData.data.vaultByAddress, null, 2) }]
+            };
+        }
+        catch (error) {
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving vault APY history: ${error.message}` }]
             };
         }
     }
