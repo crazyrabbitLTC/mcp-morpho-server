@@ -287,7 +287,7 @@ const VaultSchema = z.object({
         apy: z.number().nullable(),
         netApy: z.number().nullable(),
         totalAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
-        totalAssetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber),
+        totalAssetsUsd: z.union([z.string(), z.number(), z.null()]).transform(val => val === null ? 0 : stringToNumber(val)),
         fee: z.number(),
         timelock: z.number()
     }),
@@ -1257,6 +1257,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const query = `
         query {
           vaults${queryParams} {
+            pageInfo {
+              count
+              countTotal
+            }
             items {
               address
               symbol
