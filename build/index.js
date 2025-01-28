@@ -6,42 +6,75 @@ import axios from 'axios';
 import { z } from 'zod';
 // Define the base URL for the Morpho API
 const MORPHO_API_BASE = 'https://blue-api.morpho.org/graphql';
-// Helper function to transform string numbers to numbers
+// Helper functions for number transformations
 const stringToNumber = (val) => {
     if (val === null)
         return 0;
     return typeof val === 'string' ? Number(val) : val;
 };
+const toPercentage = (val) => {
+    return val * 100;
+};
+const fromWei = (val, decimals) => {
+    const num = stringToNumber(val);
+    return num / (10 ** decimals);
+};
 // Define Zod schemas for data validation
-// Asset Schema
+// Asset Schema with unit documentation
 const AssetSchema = z.object({
-    address: z.string(),
-    symbol: z.string(),
-    decimals: z.number(),
+    address: z.string().describe('Ethereum address of the asset'),
+    symbol: z.string().describe('Token symbol (e.g., "USDC", "ETH")'),
+    decimals: z.number().describe('Number of decimal places for the token'),
 }).nullable().transform(val => val || {
     address: '',
     symbol: '',
     decimals: 0
 });
-// Market Schema
+// Market Schema with unit documentation
 const MarketSchema = z.object({
-    uniqueKey: z.string(),
-    lltv: z.union([z.string(), z.number()]).transform(stringToNumber),
-    oracleAddress: z.string(),
-    irmAddress: z.string(),
-    loanAsset: AssetSchema,
-    collateralAsset: AssetSchema,
+    uniqueKey: z.string().describe('Unique identifier for the market'),
+    lltv: z.union([z.string(), z.number()])
+        .transform(stringToNumber)
+        .describe('Liquidation Loan-To-Value ratio as a decimal (e.g., 0.8 = 80%)'),
+    oracleAddress: z.string().describe('Ethereum address of the price oracle'),
+    irmAddress: z.string().describe('Ethereum address of the interest rate model'),
+    loanAsset: AssetSchema.describe('Asset being borrowed'),
+    collateralAsset: AssetSchema.describe('Asset being used as collateral'),
     state: z.object({
-        borrowApy: z.number(),
-        borrowAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
-        borrowAssetsUsd: z.number().nullable().transform(val => val ?? 0),
-        supplyApy: z.number(),
-        supplyAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
-        supplyAssetsUsd: z.number().nullable().transform(val => val ?? 0),
-        fee: z.number(),
-        utilization: z.number(),
-    }),
-});
+        borrowApy: z.number()
+            .transform(toPercentage)
+            .describe('Borrow Annual Percentage Yield (in %)'),
+        borrowAssets: z.union([z.string(), z.number()])
+            .describe('Total amount of assets borrowed in wei'),
+        borrowAssetsUsd: z.number()
+            .nullable()
+            .transform(val => val ?? 0)
+            .describe('USD value of borrowed assets'),
+        supplyApy: z.number()
+            .transform(toPercentage)
+            .describe('Supply Annual Percentage Yield (in %)'),
+        supplyAssets: z.union([z.string(), z.number()])
+            .describe('Total amount of assets supplied in wei'),
+        supplyAssetsUsd: z.number()
+            .nullable()
+            .transform(val => val ?? 0)
+            .describe('USD value of supplied assets'),
+        fee: z.number()
+            .transform(toPercentage)
+            .describe('Market fee rate (in %)'),
+        utilization: z.number()
+            .transform(toPercentage)
+            .describe('Market utilization rate (in %)'),
+    }).describe('Current state of the market'),
+}).transform(market => ({
+    ...market,
+    state: {
+        ...market.state,
+        // Convert asset amounts using their respective decimals
+        borrowAssets: fromWei(market.state.borrowAssets, market.loanAsset.decimals),
+        supplyAssets: fromWei(market.state.supplyAssets, market.loanAsset.decimals),
+    }
+}));
 // Combined items schema
 const MarketsItemsSchema = z.object({
     items: z.array(MarketSchema),
