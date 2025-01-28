@@ -2,6 +2,8 @@
 
 A Model Context Protocol (MCP) server that provides tools for querying the Morpho API. This server enables Claude to interact with Morpho's GraphQL API, providing access to market data, vaults, positions, and more.
 
+<a href="https://glama.ai/mcp/servers/t3vqcxa90h"><img width="380" height="200" src="https://glama.ai/mcp/servers/t3vqcxa90h/badge" alt="Morpho API Server MCP server" /></a>
+
 ## Features
 
 * Query Morpho markets data through GraphQL
