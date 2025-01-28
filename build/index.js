@@ -6,78 +6,99 @@ import axios from 'axios';
 import { z } from 'zod';
 // Define the base URL for the Morpho API
 const MORPHO_API_BASE = 'https://blue-api.morpho.org/graphql';
-// Helper functions for number transformations
+// Helper function to transform string numbers to numbers
 const stringToNumber = (val) => {
     if (val === null)
         return 0;
     return typeof val === 'string' ? Number(val) : val;
 };
-const toPercentage = (val) => {
-    return val * 100;
-};
-const fromWei = (val, decimals) => {
-    const num = stringToNumber(val);
-    return num / (10 ** decimals);
-};
 // Define Zod schemas for data validation
-// Asset Schema with unit documentation
+// Asset Schema
 const AssetSchema = z.object({
-    address: z.string().describe('Ethereum address of the asset'),
-    symbol: z.string().describe('Token symbol (e.g., "USDC", "ETH")'),
-    decimals: z.number().describe('Number of decimal places for the token'),
+    address: z.string(),
+    symbol: z.string(),
+    decimals: z.number(),
 }).nullable().transform(val => val || {
     address: '',
     symbol: '',
     decimals: 0
 });
-// Market Schema with unit documentation
+// Chain Schema
+const ChainSchema = z.object({
+    id: z.number(),
+    network: z.string(),
+    currency: z.string()
+});
+// Yield Schema
+const YieldSchema = z.object({
+    apr: z.number().nullable()
+});
+// Asset with Price Schema
+const AssetWithPriceSchema = z.object({
+    symbol: z.string(),
+    address: z.string(),
+    priceUsd: z.number().nullable(),
+    chain: ChainSchema,
+    yield: YieldSchema.nullable()
+});
+// Market Position Schema
+const MarketPositionSchema = z.object({
+    supplyShares: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+    supplyAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
+    supplyAssetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber),
+    borrowShares: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+    borrowAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
+    borrowAssetsUsd: z.union([z.string(), z.number()]).transform(stringToNumber),
+    collateral: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+    collateralUsd: z.union([z.string(), z.number()]).transform(stringToNumber).optional(),
+    market: z.object({
+        uniqueKey: z.string(),
+        loanAsset: AssetSchema,
+        collateralAsset: AssetSchema,
+    }),
+    user: z.object({
+        address: z.string()
+    })
+});
+// Market Schema
 const MarketSchema = z.object({
-    uniqueKey: z.string().describe('Unique identifier for the market'),
-    lltv: z.union([z.string(), z.number()])
-        .transform(stringToNumber)
-        .describe('Liquidation Loan-To-Value ratio as a decimal (e.g., 0.8 = 80%)'),
-    oracleAddress: z.string().describe('Ethereum address of the price oracle'),
-    irmAddress: z.string().describe('Ethereum address of the interest rate model'),
-    loanAsset: AssetSchema.describe('Asset being borrowed'),
-    collateralAsset: AssetSchema.describe('Asset being used as collateral'),
+    uniqueKey: z.string(),
+    lltv: z.union([z.string(), z.number()]).transform(stringToNumber),
+    oracleAddress: z.string(),
+    irmAddress: z.string(),
+    whitelisted: z.boolean().optional(),
+    loanAsset: AssetSchema,
+    collateralAsset: AssetSchema,
     state: z.object({
-        borrowApy: z.number()
-            .transform(toPercentage)
-            .describe('Borrow Annual Percentage Yield (in %)'),
-        borrowAssets: z.union([z.string(), z.number()])
-            .describe('Total amount of assets borrowed in wei'),
-        borrowAssetsUsd: z.number()
-            .nullable()
-            .transform(val => val ?? 0)
-            .describe('USD value of borrowed assets'),
-        supplyApy: z.number()
-            .transform(toPercentage)
-            .describe('Supply Annual Percentage Yield (in %)'),
-        supplyAssets: z.union([z.string(), z.number()])
-            .describe('Total amount of assets supplied in wei'),
-        supplyAssetsUsd: z.number()
-            .nullable()
-            .transform(val => val ?? 0)
-            .describe('USD value of supplied assets'),
-        fee: z.number()
-            .transform(toPercentage)
-            .describe('Market fee rate (in %)'),
-        utilization: z.number()
-            .transform(toPercentage)
-            .describe('Market utilization rate (in %)'),
-    }).describe('Current state of the market'),
-}).transform(market => ({
-    ...market,
-    state: {
-        ...market.state,
-        // Convert asset amounts using their respective decimals
-        borrowAssets: fromWei(market.state.borrowAssets, market.loanAsset.decimals),
-        supplyAssets: fromWei(market.state.supplyAssets, market.loanAsset.decimals),
-    }
-}));
+        borrowApy: z.number(),
+        borrowAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
+        borrowAssetsUsd: z.number().nullable().transform(val => val ?? 0),
+        supplyApy: z.number(),
+        supplyAssets: z.union([z.string(), z.number()]).transform(stringToNumber),
+        supplyAssetsUsd: z.number().nullable().transform(val => val ?? 0),
+        fee: z.number(),
+        utilization: z.number(),
+    }),
+});
 // Combined items schema
 const MarketsItemsSchema = z.object({
     items: z.array(MarketSchema),
+});
+// Assets Response Schema
+const AssetsResponseSchema = z.object({
+    data: z.object({
+        assets: z.object({
+            items: z.array(AssetWithPriceSchema)
+        })
+    })
+});
+// Market Positions Response Schema
+const MarketPositionsResponseSchema = z.object({
+    data: z.object({
+        marketPositions: z.object({
+            items: z.array(MarketPositionSchema)
+        })
+    })
 });
 // Morpho API Response Schema
 const MorphoApiResponseSchema = z.object({
@@ -87,6 +108,9 @@ const MorphoApiResponseSchema = z.object({
 });
 // Define tool names as constants to avoid typos
 const GET_MARKETS_TOOL = 'get_markets';
+const GET_WHITELISTED_MARKETS_TOOL = 'get_whitelisted_markets';
+const GET_ASSET_PRICE_TOOL = 'get_asset_price';
+const GET_MARKET_POSITIONS_TOOL = 'get_market_positions';
 // Create server instance with capabilities to handle tools
 const server = new Server({
     name: "morpho-api-server",
@@ -108,13 +132,52 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                     properties: {}, // No input parameters for this tool
                 },
             },
+            {
+                name: GET_WHITELISTED_MARKETS_TOOL,
+                description: 'Retrieves only whitelisted markets from Morpho.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {}, // No input parameters for this tool
+                },
+            },
+            {
+                name: GET_ASSET_PRICE_TOOL,
+                description: 'Get current price and yield information for specific assets.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        symbol: {
+                            type: 'string',
+                            description: 'Asset symbol (e.g. "sDAI")'
+                        }
+                    },
+                    required: ['symbol']
+                },
+            },
+            {
+                name: GET_MARKET_POSITIONS_TOOL,
+                description: 'Get positions overview for specific markets.',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        marketUniqueKey: {
+                            type: 'string',
+                            description: 'Unique key of the market'
+                        },
+                        limit: {
+                            type: 'number',
+                            description: 'Number of positions to return (default: 30)'
+                        }
+                    },
+                    required: ['marketUniqueKey']
+                },
+            },
         ],
     };
 });
 // Implementation to handle tool execution requests
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name } = request.params;
-    // Execute the correct function based on the tool being called
+    const { name, params } = request.params;
     if (name === GET_MARKETS_TOOL) {
         try {
             const query = `
@@ -150,13 +213,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
           `;
             const response = await axios.post(MORPHO_API_BASE, { query });
-            // Validate the response with Zod
             const validatedData = MorphoApiResponseSchema.parse(response.data);
             return {
                 content: [
                     {
                         type: 'text',
-                        text: JSON.stringify(validatedData.data.markets.items, null, 2), // Format output
+                        text: JSON.stringify(validatedData.data.markets.items, null, 2),
                     },
                 ],
             };
@@ -165,12 +227,161 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             console.error('Error calling Morpho API:', error.message);
             return {
                 isError: true,
+                content: [{ type: 'text', text: `Error retrieving markets: ${error.message}` }],
+            };
+        }
+    }
+    if (name === GET_WHITELISTED_MARKETS_TOOL) {
+        try {
+            const query = `
+            query {
+              markets(where:{whitelisted: true}) {
+                items {
+                  whitelisted
+                  uniqueKey
+                  lltv
+                  oracleAddress
+                  irmAddress
+                  loanAsset {
+                    address
+                    symbol
+                    decimals
+                  }
+                  collateralAsset {
+                    address
+                    symbol
+                    decimals
+                  }
+                  state {
+                    borrowApy
+                    borrowAssets
+                    borrowAssetsUsd
+                    supplyApy
+                    supplyAssets
+                    supplyAssetsUsd
+                    fee
+                    utilization
+                  }
+                }
+              }
+            }
+          `;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = MorphoApiResponseSchema.parse(response.data);
+            return {
                 content: [
                     {
                         type: 'text',
-                        text: `Error retrieving markets: ${error.message}`,
+                        text: JSON.stringify(validatedData.data.markets.items, null, 2),
                     },
                 ],
+            };
+        }
+        catch (error) {
+            console.error('Error calling Morpho API:', error.message);
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving whitelisted markets: ${error.message}` }],
+            };
+        }
+    }
+    if (name === GET_ASSET_PRICE_TOOL) {
+        try {
+            const { symbol } = params;
+            const query = `
+            query GetAssetsWithPrice {
+              assets(where: { symbol_in: ["${symbol}"] }) {
+                items {
+                  symbol
+                  address
+                  priceUsd
+                  chain {
+                    id
+                    network
+                    currency
+                  }
+                  yield {
+                    apr
+                  }
+                }
+              }
+            }
+          `;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = AssetsResponseSchema.parse(response.data);
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify(validatedData.data.assets.items, null, 2),
+                    },
+                ],
+            };
+        }
+        catch (error) {
+            console.error('Error calling Morpho API:', error.message);
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving asset price: ${error.message}` }],
+            };
+        }
+    }
+    if (name === GET_MARKET_POSITIONS_TOOL) {
+        try {
+            const { marketUniqueKey, limit = 30 } = params;
+            const query = `
+            query {
+              marketPositions(
+                first: ${limit}
+                orderBy: SupplyShares
+                orderDirection: Desc
+                where: {
+                  marketUniqueKey_in: ["${marketUniqueKey}"]
+                }
+              ) {
+                items {
+                  supplyShares
+                  supplyAssets
+                  supplyAssetsUsd
+                  borrowShares
+                  borrowAssets
+                  borrowAssetsUsd
+                  collateral
+                  collateralUsd
+                  market {
+                    uniqueKey
+                    loanAsset {
+                      address
+                      symbol
+                    }
+                    collateralAsset {
+                      address
+                      symbol
+                    }
+                  }
+                  user {
+                    address
+                  }
+                }
+              }
+            }
+          `;
+            const response = await axios.post(MORPHO_API_BASE, { query });
+            const validatedData = MarketPositionsResponseSchema.parse(response.data);
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify(validatedData.data.marketPositions.items, null, 2),
+                    },
+                ],
+            };
+        }
+        catch (error) {
+            console.error('Error calling Morpho API:', error.message);
+            return {
+                isError: true,
+                content: [{ type: 'text', text: `Error retrieving market positions: ${error.message}` }],
             };
         }
     }
